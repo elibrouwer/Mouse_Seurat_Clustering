@@ -1,7 +1,6 @@
-pacman::p_load("KEGGREST","stringr", "ComplexHeatmap", "circlize")
-#from https://gtexportal.org/home/datasets
-Healthy_Aorta <- read.delim(file="C:/Users/brouw/OneDrive - Universiteit Utrecht/Master Bioinformatics/Major Internship/R/gene_reads_2017-06-05_v8_artery_aorta.gct.gz", skip=2)
+pacman::p_load("KEGGREST","stringr", "ComplexHeatmap", "circlize", "reshape", "reshape2")
 
+#from https://gtexportal.org/home/datasets
 Healthy_Aorta <- read.delim(file="C:/Users/brouw/OneDrive - Universiteit Utrecht/Master Bioinformatics/Major Internship/R/gene_tpm_2017-06-05_v8_artery_aorta.gct.gz", skip=2) %>%
   dplyr::select(-c(id,Name)) %>%
   dplyr::rename(gene_id = Description) %>%
@@ -11,39 +10,26 @@ Healthy_Aorta <- read.delim(file="C:/Users/brouw/OneDrive - Universiteit Utrecht
   column_to_rownames(var = 'gene_id') %>%
   drop_na() %>%
   normalizeQuantiles() %>%
+  dplyr::select(sample(seq_len(ncol(.)), size = 150)) %>% #downsampling the aorta samples to n=150
   rownames_to_column(var = "gene_id") 
 
-#downsampling aorta to n=100
-Healthy_Aorta %<>%
-  column_to_rownames(var = 'gene_id') %>%
-  dplyr::select(sample(seq_len(ncol(.)), size = 150)) %>%
-  rownames_to_column(var = "gene_id") 
 
-Healthy_Aorta %>%
-  column_to_rownames(var = 'gene_id') %>%
-  melt() %>%
-  dplyr::mutate(dataset = paste0("Human_Aorta")) -> Healthy_Aorta_mlt
-
-Human_GeneSymb <- read_delim(file = paste0(file_path_sans_ext(HumanPath), "_", basename(dirname(HumanPath)),"Gene_Symbol" ,".txt")) 
+Human_Carotid_GeneSymb <- read_delim(file = paste0(file_path_sans_ext(HumanPath), "_", basename(dirname(HumanPath)),"Gene_Symbol" ,".txt")) #Human carotid samples with gene symbols
 
 Integrated_Mouse_all_genes %>%
   rownames_to_column(var = "gene_id") %>%
-  left_join(Human_GeneSymb, by = c("gene_id")) %>%
+  left_join(Human_Carotid_GeneSymb, by = c("gene_id")) %>%
   distinct(gene_id , .keep_all = TRUE) %>%
   left_join(Healthy_Aorta, by = c("gene_id")) %>%
   distinct(gene_id , .keep_all = TRUE) %>%
   na.omit() %>%
   remove_rownames() %>%
   column_to_rownames(var = 'gene_id') %>%
-  normalizeQuantiles() -> Human_Mice_Aorta
+  normalizeQuantiles() -> Carotid_Mice_Aorta #was Human_Mice_Aorta
 
-Integrated_Mouse_all_genes %>%
-  melt() %>%
-  dplyr::mutate(dataset = paste0("Mouse")) -> Mouse_mlt
+#write.table(Carotid_Mice_Aorta %>% rownames_to_column(var = 'gene_id'), file = paste0(file_path_sans_ext(MousePath), "_", basename(dirname(MousePath)),"Carotid_Mice_Aorta" ,".txt"), sep = "\t", row.names = FALSE)
 
-#write.table(Human_Mice_Aorta %>% rownames_to_column(var = 'gene_id'), file = paste0(file_path_sans_ext(MousePath), "_", basename(dirname(MousePath)),"Human_Mice_Aorta" ,".txt"), sep = "\t", row.names = FALSE)
-
-Human_Mice_Aorta <- read_delim(file = paste0(file_path_sans_ext(MousePath), "_", basename(dirname(MousePath)),"Human_Mice_Aorta" ,".txt")) %>%
+Carotid_Mice_Aorta <- read_delim(file = paste0(file_path_sans_ext(MousePath), "_", basename(dirname(MousePath)),"Carotid_Mice_Aorta" ,".txt")) %>%
   column_to_rownames(var ='gene_id')
 
 # Add data Coronary ----------------------------------------------------------
@@ -67,48 +53,22 @@ data_clint_no_aorta <-  read_delim(file="C:/Users/brouw/OneDrive - Universiteit 
   normalizeQuantiles()  %>%
   rownames_to_column(var = "gene_id") 
 
-data_clint_no_aorta %<>%
-  column_to_rownames(var = "gene_id") %>%
-  dplyr::select(c(metadata_clint_Isch_vs_NonIsch$SampleID)) %>% #can be used to select only the ischemic vs non ischemic
-  rownames_to_column(var = "gene_id") 
+#data_clint_no_aorta %<>%
+#  column_to_rownames(var = "gene_id") %>%
+#  dplyr::select(c(metadata_clint_Isch_vs_NonIsch$SampleID)) %>% #can be used to select only the ischemic vs non ischemic
+#  rownames_to_column(var = "gene_id") 
 
-
-Integrated_clint %>%
-  rownames_to_column(var = "gene_id") -> data_clint_no_aorta
-
-Human_Mice_Aorta %>%
+Carotid_Mice_Aorta %>%
   rownames_to_column(var = 'gene_id') %>%
   left_join(data_clint_no_aorta, by = c("gene_id")) %>%
   distinct(gene_id , .keep_all = TRUE) %>%
   na.omit() %>%
   remove_rownames() %>%
   column_to_rownames(var = 'gene_id') %>%
-  normalizeQuantiles() -> Human_Mice_Aorta_Coronary
+  normalizeQuantiles() -> Carotid_Mice_Aorta_Coronary
 
-library(reshape)
 
-#control steps for the distribution
-Human_Mice_Aorta_Coronary %>%
-  melt() %>%
-  dplyr::mutate(dataset = ifelse(grepl("ae",variable), paste0("Human_Caro"), 
-                                 ifelse(grepl("GSM",variable), paste0("Mouse"),
-                                    ifelse(grepl("GTEX",variable), paste0("Human_Aorta"),
-                                      ifelse(grepl("UVA",variable), paste0("Human_Cor"), "-"))))) %>%
-  ggplot(aes( x= value, color = dataset)) +
-  geom_density(alpha=0.3,size=1) + scale_x_log10() + geom_density() + ggtitle("Density plot of all dataset after quantile-normalization") -> density_plt_after_normalization
-
-Human_Caro %>%
-  column_to_rownames(var = 'gene_id') %>%
-  melt() %>%
-  dplyr::mutate(dataset = paste0("Human_Caro")) %>%
-  rbind(Human_Cor_mlt) %>%
-  rbind(Mouse_mlt) %>%
-  rbind(Healthy_Aorta_mlt) %>%
-  #rbind(Mouse_ldl_mlt) %>%
-  ggplot(aes( x= value, color = dataset)) +
-  geom_density(alpha=0.3,size=1) + scale_x_log10() + geom_density() + ggtitle("Density plot of all dataset before quantile-normalization") -> density_plt_before_normalization
-
-#pathway comparison plots
+# Pathway_Comparison_Heatmaps ---------------------------------------------
 
 PathwayComparison_plt <- function(Mouse, Carotids, Coronary, Aorta, Selected_Paths, General_Paths){
   if(Mouse == TRUE & Carotids == TRUE & Coronary == FALSE & Aorta == FALSE){
@@ -242,15 +202,15 @@ PathwayComparison_plt <- function(Mouse, Carotids, Coronary, Aorta, Selected_Pat
                                                col = col_fun,
                                                row_names_gp = gpar(fontsize = 10),
                                                column_title_rot = 0,
-                                               top_annotation = HeatmapAnnotation(foo = anno_block(gp = gpar(fill = scales::hue_pal()(9)))),
+                                               #top_annotation = HeatmapAnnotation(foo = anno_block(gp = gpar(fill = scales::hue_pal()(9)))),
                                                left_annotation = rowAnnotation(foo = anno_block(gp = gpar(fill = c("#F8766D" , "#93AA00", "#00BA38", "#00C19F" ,"#00B9E3" ,"#619CFF" ,"#DB72FB" ,"#FF61C3")))),
                                                show_column_names = FALSE,
                                                use_raster = TRUE,
                                                raster_quality = 5,
                                                row_names_side = "right",
                                                row_title_side = "left",
-                                               row_split = c("Human_2","Mouse_2", "Mouse_1", "Mouse_1", "Human_3", "Human_3", "Mouse_4", "Mouse_4", 
-                                                             "Human_2", "Mouse_3", "Human_3", "Mouse_4", "Human_3", "Mouse_3"),
+                                               row_split = c("Mouse_2", "Mouse_1", "Mouse_1", "Mouse_2", "Mouse_4", 
+                                                             "Mouse_3",  "Mouse_4", "Mouse_3"),
                                                row_title_rot = 0,
                                                column_names_rot = 45)
   
@@ -317,11 +277,11 @@ PathwayComparison_plt <- function(Mouse, Carotids, Coronary, Aorta, Selected_Pat
                                  col = col_fun,
                                  row_names_gp = gpar(fontsize = 10),
                                  column_title_rot = 0,
-                                 #top_annotation = HeatmapAnnotation(foo = anno_block(gp = gpar(fill = scales::hue_pal()(9)))),
+                                 top_annotation = HeatmapAnnotation(foo = anno_block(gp = gpar(fill = scales::hue_pal()(9)))),
                                  left_annotation = rowAnnotation(foo = anno_block(gp = gpar(fill = c("#F8766D" , "#93AA00", "#00BA38", "#00C19F" ,"#00B9E3" ,"#619CFF" ,"#DB72FB" ,"#FF61C3")))),
                                  show_column_names = FALSE,
                                  use_raster = TRUE,
-                                 row_split = c("Inflammatory","Apoptosis", "ECM modification", "Angiogenisis", "Lipid metabolism", "Angiogenisis", "Inflammatory", "Inflammatory", 
+                                 row_split = c("Inflammatory","Metabolism" ,"Apoptosis", "ECM modification", "Angiogenesis", "Metabolism", "Angiogenesis", "Inflammatory", "Inflammatory", 
                                                "Inflammatory", "Inflammatory", "Shear stress"),
                                  raster_quality = 10,
                                  row_names_side = "right",
@@ -329,25 +289,33 @@ PathwayComparison_plt <- function(Mouse, Carotids, Coronary, Aorta, Selected_Pat
                                  row_title_rot = 0)
   
 }
-PathwayComparison_plt(TRUE,TRUE,TRUE,TRUE, Selected_Paths, General_Paths )
+#first made a function because the first idea was to make different graphs, now still using the function because I then save less big datasets in global environment.
 
-Human_Paths <- c( "R-MMU-6798695", "R-MMU-71403", "R-MMU-70171", "R-MMU-445355" , "R-MMU-77289", "R-MMU-168256") #deleted tryoptophan cat and iron uptake, too different between species
-General_Paths <- data.frame(ID = c( "R-MMU-6798695","R-MMU-2559580", "R-MMU-1474228", "R-MMU-194138", "mmu05417", "mmu04370", "mmu04064", "mmu04145", "mmu04668", "mmu04350", "mmu05418"))
+PathwayComparison_plt(TRUE,TRUE,TRUE,TRUE, Selected_Paths, General_Paths ) #using the integrated coronary and carotid data.
 
-Selected_Paths <- read.csv("C:/Users/brouw/OneDrive - Universiteit Utrecht/Master Bioinformatics/Major Internship/R/Datasets/Mice/GSE66569_APOE/GSE66569_Topn2paths.csv") %>%
-  add_row(ID = Human_Paths)
+General_Paths <- data.frame(ID = c( "R-MMU-6798695","R-MMU-70171", "R-MMU-2559580", "R-MMU-1474228", "R-MMU-194138", "mmu05417", "mmu04370", "mmu04064", "mmu04145", "mmu04668", "mmu04350", "mmu05418"))
+
+Selected_Paths <- read.csv("C:/Users/brouw/OneDrive - Universiteit Utrecht/Master Bioinformatics/Major Internship/R/Datasets/Mice/GSE66569_APOE/GSE66569_Topn2paths.csv") 
 
 paths <- c( "R-MMU-6798695", "R-MMU-71403", "R-MMU-70171", "R-MMU-445355" , "R-MMU-77289", "R-MMU-168256","R-MMU-6798695","R-MMU-2559580", "R-MMU-1474228", "R-MMU-194138", "mmu05417", "mmu04370", "mmu04064", "mmu04145", "mmu04668", "mmu04350", "mmu05418")
-ht_list = selected_heatmap %v% General_paths_htmap
+
+ht_list = General_paths_htmap %v% selected_heatmap #get the heatmaps vertical of eachother
 
 draw(ht_list,column_title = "Atherosclerosis pathways", ht_gap = unit(.5, "cm"), heatmap_legend_side = "left",annotation_legend_side = "bottom", width = unit(40, "cm"))
-b <- draw(General_paths_htmap)
 
-#pathway correlation heatmaps
+
+# Pathway_Correlation_Heatmps ---------------------------------------------
+
+Carotid_Mice_Aorta_Coronary_Obj <- CreateSeuratObject(counts = Combined_Expression_dataframe)
+Carotid_Mice_Aorta_Coronary_Obj %<>%
+  FindVariableFeatures() %>%
+  ScaleData(verbose = FALSE, features = rownames(Seurat_Obj)) 
+
+pdf(file= paste0(FolderPath, "Path_Correlation.pdf"), width = 4, height = 3)
 for (j in 1:length(paths)){
   print(paths[j])
   pathway=c(paths[j])
-if (startsWith(pathway, "R")){
+if (startsWith(pathway, "R")){ #two different sources reactome (start with "R")
   Path_Name <- query(paths[j])$displayName 
   path_genes <- getLDS(mart = Ens_Mouse,
                        attributes = 'reactome',
@@ -358,75 +326,51 @@ if (startsWith(pathway, "R")){
   
   path_gen_list <- path_genes$HGNC.symbol
   print("reactome")
-} else {
+} else { #other database Kegg
   print("no reactome")
   Path_Name <- keggGet(pathway)[[1]]$NAME%>%
     str_replace("(- Mus musculus \\(house mouse\\))", "")
   keggGet(pathway)[[1]]$GENE -> names
   namesodd <-  names[seq(0,length(names),2)]
-  path_gen_list <- gsub("\\;.*","",namesodd) %>%
+  path_gen_list <- gsub("\\;.*","",namesodd) %>% #have to select all the odd names because output of keggGet is "gene" and number
     toupper()
 }
 
-GetAssayData(Human_Mice_Aorta_Coronary_Obj, slot = "data") -> data
+GetAssayData(Carotid_Mice_Aorta_Coronary_Obj, slot = "data") -> data
 data %>%
   as.data.frame() %>%
   rownames_to_column(var = "gene_id") %>%
   subset(gene_id %in% path_gen_list) %>%
   remove_rownames() %>%
   column_to_rownames(var = "gene_id") %>%
-  dplyr::select(starts_with("ae")| starts_with("GSM")) %>%
-  cor() %>%
+  dplyr::select(starts_with("ae")| starts_with("GSM")) %>% #select carotid (start with "ae") and Mouse (start with "GSM")
+  cor() %>% #pearson's correlation
   data.frame() %>%
   rownames_to_column(var = "Name") %>%
   left_join(Human_Mouse_Cats, by =c("Name" = "categories")) %>%
   column_to_rownames(var = "Name") %>%
-  group_by(cluster)   -> correlation_matrix
-
-correlation_matrix %>%
+  group_by(cluster) %>%
   reshape2::melt() %>%
   left_join(Human_Mouse_Cats, by =c("variable" = "categories") ) %>%
-  dplyr::filter(!grepl('Human_NA', c(cluster.x))) %>%
-  dplyr::filter(!grepl('Human_NA', c(cluster.y))) %>%
-  ggplot(aes(x = cluster.x, y = cluster.y, fill = value)) + geom_tile() + ggtitle(paste0(Path_Name)) +   scale_fill_gradient2(low = "#075AFF",
+  dplyr::filter(!grepl('Carotid_NA', c(cluster.x))) %>%
+  dplyr::filter(!grepl('Carotid_NA', c(cluster.y))) %>% #leaving out the human_NA's 
+  dplyr::filter(cluster.x >= cluster.y) %>% #filter to only be left with the lower triangle correlation matrix
+   ggplot(aes(x = cluster.x, y = cluster.y, fill = value)) + geom_tile(color = "black", size=0.2) + ggtitle(paste0(Path_Name)) +   scale_fill_gradient2(low = "#075AFF",
                                                                                                                               mid = "white",
-                                                                                                                              high = "darkgreen") -> plot
-print(plot)
+                                                                                                                              high = "darkgreen") + 
+  theme_minimal()+
+  theme(panel.background = element_blank(), 
+        panel.grid.major = element_blank(),
+        panel.border = element_blank())+
+  theme(axis.text.y = element_text(margin = margin(t = 0, r = 0, b = 0, l = 50), angle =0),
+        axis.text.x = element_text(margin = margin(t = 0, r = 0, b = 0, l = 50), angle =90),
+        axis.title.y = element_blank(),
+        axis.title.x = element_blank()) -> correlation_plt
 
+print(correlation_plt)
 }
+
 dev.list()
 dev.off()
-dev.cur()
-getOption("device")
 
 
-pathway <- "mmu04370"
-
-library(KEGGREST)
-if (startsWith(pathway, "R")){
-    Path_Name <- query(paths[j])$displayName 
-    path_genes <- getLDS(mart = Ens_Mouse,
-                         attributes = 'reactome',
-                         martL = Ens_Human,
-                         attributesL = c("hgnc_symbol"),
-                         filters = 'reactome',
-                         values = pathway)
-    
-    path_gen_list <- path_genes$HGNC.symbol
-    print("reactome")
-  } else {
-    print("no reactome")
-    Path_Name <- keggGet(pathway)[[1]]$NAME%>%
-      str_replace("(- Mus musculus \\(house mouse\\))", "")
-    keggGet(pathway)[[1]]$GENE -> names
-    namesodd <-  names[seq(0,length(names),2)]
-    path_gen_list <- gsub("\\;.*","",namesodd) %>%
-      toupper()
-  }
-path_gen_list
-
-library(Seurat)
-
-Human_Mouse_Obj@meta.data
-DoHeatmap(Human_Mouse_Obj, features=path_gen_list, slot = "data", group.by = "Plaque_Cat") + scale_fill_gradientn( colors = colorpanel(100,"grey100","grey90","darkgreen"))
-DoHeatmap
